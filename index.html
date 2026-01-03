@@ -43,6 +43,10 @@ button{
 }
 .hidden{ display:none; }
 
+/* close / transition effect when choosing correct answer */
+.close-effect{ transform:scale(.78); opacity:0; transition: transform .28s ease-in, opacity .28s ease-in; }
+.choice-fade{ transition: opacity .22s ease-in-out; }
+
 /* option buttons layout: allow image + label and make mobile-friendly */
 .bopt{ display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; }
 .bopt .option-img{ width:72px; height:72px; object-fit:cover; border-radius:12px; display:block; }
@@ -220,9 +224,13 @@ function chooseIf(selected, btn){
   if(correct){
     smallSparkAtButton(btn);
     playTinyTone();
-    p.if = selected;
-    phase = "would";
-    setTimeout(render,600);
+    // add close animation then advance quicker
+    btn.classList.add('close-effect');
+    setTimeout(()=>{
+      p.if = selected;
+      phase = "would";
+      render();
+    }, 300);
   }else{
     shakeButton(btn);
     return; // don't advance until correct
@@ -235,14 +243,14 @@ function chooseWould(selected, btn){
   const correct = btn && btn.dataset && btn.dataset.correct === '1';
   if(correct){
     smallSparkAtButton(btn); playTinyTone();
-    p.would = selected;
-    step++;
-    phase = "if";
-    if(step < pairs.length){
-      setTimeout(render,700);
-    }else{
-      setTimeout(showFinalPair,700);
-    }
+    // animate selection close then advance
+    btn.classList.add('close-effect');
+    setTimeout(()=>{
+      p.would = selected;
+      step++;
+      phase = "if";
+      if(step < pairs.length) render(); else showFinalPair();
+    }, 300);
   }else{
     shakeButton(btn);
     return; // do not advance until correct
@@ -329,7 +337,6 @@ function celebrate(){
   heartExplosion();
   // enhanced fireworks + sound
   launchBigFireworks();
-  playExplosionSound();
   startConfettiBursts();
 }
 
@@ -444,6 +451,40 @@ function playExplosionSound(){
     o.connect(g); g.connect(audioCtx.destination);
     o.start(now + i*0.02); o.stop(now + 0.3 + i*0.02);
   }
+}
+
+// gentle "fairy dust" sound: soft bell/arpeggio + shimmering noise
+function playFairyDustSound(){
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const master = audioCtx.createGain(); master.gain.value = 0.18; master.connect(audioCtx.destination);
+
+  // soft arpeggiated bells (three staggered sine-ish tones)
+  const freqs = [660,880,1320];
+  freqs.forEach((f, i)=>{
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f * (1 + (Math.random()-0.5)*0.01), now + i*0.06);
+    g.gain.setValueAtTime(0.0001, now + i*0.06);
+    g.gain.linearRampToValueAtTime(0.06, now + i*0.06 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.9 + i*0.02);
+    o.connect(g); g.connect(master);
+    o.start(now + i*0.06); o.stop(now + 1.0 + i*0.02);
+  });
+
+  // shimmering high-frequency noise (short)
+  const bufferSize = audioCtx.sampleRate * 0.18;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for(let i=0;i<bufferSize;i++){
+    data[i] = (Math.random()*2-1) * Math.pow(1 - i/bufferSize, 2);
+  }
+  const src = audioCtx.createBufferSource(); src.buffer = buffer;
+  const hp = audioCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value = 900;
+  const g2 = audioCtx.createGain(); g2.gain.setValueAtTime(0.25, now);
+  src.connect(hp); hp.connect(g2); g2.connect(master);
+  src.start(now);
 }
 
 const fxCanvas = document.getElementById('fx');
