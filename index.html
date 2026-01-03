@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>If You Were 💗</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* ---------- GENERAL ---------- */
+body{
+  margin:0;
+  height:100vh;
+  overflow:hidden;
+  font-family: system-ui, ui-rounded;
+  background: linear-gradient(180deg,#ffe6f2,#fff);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+}
+.box{
+  background:#ffffffcc;
+  backdrop-filter: blur(10px);
+  padding:32px;
+  border-radius:28px;
+  box-shadow:0 25px 50px rgba(0,0,0,.15);
+  max-width:460px;
+  z-index:2;
+}
+h1{
+  line-height:1.4;
+  margin-bottom:20px;
+}
+button{
+  margin:10px;
+  padding:14px 22px;
+  border-radius:18px;
+  border:none;
+  font-size:16px;
+  cursor:pointer;
+  background:#ff9acb;
+  color:#7a0037;
+  font-weight:800;
+}
+.hidden{ display:none; }
+
+/* option buttons layout: allow image + label and make mobile-friendly */
+.bopt{ display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; }
+.bopt .option-img{ width:72px; height:72px; object-fit:cover; border-radius:12px; display:block; }
+@media (max-width:600px){
+  .bopt{ padding:12px 14px; }
+  .bopt .option-img{ width:64px; height:64px; }
+}
+
+/* ---------- FIREWORKS CANVAS ---------- */
+#fx{
+  position:fixed;
+  left:0;top:0;
+  width:100vw;height:100vh;
+  pointer-events:none;
+  z-index:1;
+}
+.curtain{ position:fixed; left:0; top:0; width:100%; height:100%; z-index:6; pointer-events:none; overflow:hidden; }
+.curtain .panel{ position:absolute; top:0; height:100%; width:50%; background:linear-gradient(180deg,#222,#111); }
+.curtain .left{ left:0; transform:translateX(0); animation: openLeft 1.6s ease-out 0.4s forwards; }
+.curtain .right{ right:0; transform:translateX(0); animation: openRight 1.6s ease-out 0.4s forwards; }
+@keyframes openLeft{ to{ transform:translateX(-110%); } }
+@keyframes openRight{ to{ transform:translateX(110%); } }
+.curtain .fog{ position:absolute; inset:0; background: radial-gradient(circle at 20% 30%, rgba(255,255,255,0.06), transparent 10%), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.04), transparent 8%); mix-blend-mode:screen; animation: drift 6s linear infinite; }
+@keyframes drift{ 0%{ background-position:0% 0%,0% 0% } 50%{ background-position:30% 10%, -20% 30% } 100%{ background-position:0% 0%,0% 0% } }
+/* button shake */
+.shake{ animation: shake .42s; }
+@keyframes shake{ 10%,90%{ transform:translateX(-2px);} 20%,80%{ transform:translateX(4px);} 30%,50%,70%{ transform:translateX(-6px);} 40%,60%{ transform:translateX(6px);} }
+.bigtap{ padding:16px 24px; font-size:18px; }
+img.char-img{ width:72px; height:72px; object-fit:cover; border-radius:12px; display:block; margin:0 auto 8px; }
+/* ---------- HEARTS ---------- */
+.heart{
+  position:absolute;
+  bottom:-30px;
+  color:#ff6fae;
+  animation: float 8s linear infinite;
+}
+@keyframes float{
+  to{ transform: translateY(-120vh); opacity:0; }
+}
+</style>
+</head>
+
+<body>
+
+<!-- audio removed per request: no autoplay song -->
+
+<div class="curtain" id="curtain">
+  <div class="panel left"></div>
+  <div class="panel right"></div>
+  <div class="fog"></div>
+</div>
+
+<div class="box">
+  <h1 id="line">Welcome! Tap Start to begin.</h1>
+  <div id="choices"></div>
+  <div style="margin-top:12px">
+    <button id="play" onclick="startApp()">Start</button>
+  </div>
+</div>
+
+<canvas id="fx"></canvas>
+<div id="ytplayer" style="width:1px;height:1px;opacity:0;position:absolute;left:-9999px;top:0"></div>
+
+<script>
+/* ---------- LYRICS DATA ---------- */
+const pairs = [
+  { if:"the popcorn", would:"the movie",
+    ifOptions:["the popcorn","the candy"],
+    wouldOptions:["the movie","the trailer"]
+  },
+  { if:"strawberries", would:"the smoothie",
+    ifOptions:["strawberries","cherries"],
+    wouldOptions:["the smoothie","the juice"]
+  },
+  { if:"October", would:"apple cider",
+    ifOptions:["October","November"],
+    wouldOptions:["apple cider","pumpkin pie"]
+  },
+  { if:"the waffle fries", would:"the slider",
+    ifOptions:["the waffle fries","the chips"],
+    wouldOptions:["the slider","the burger"]
+  }
+];
+
+// store correct answers (original values) so we can mark correct/wrong
+pairs.forEach(p=>{ p._correctIf = p.if; p._correctWould = p.would; });
+
+let step = 0;
+let phase = "if";
+let melodyPicked = false;
+let kuromiPicked = false;
+
+const line = document.getElementById("line");
+const choices = document.getElementById("choices");
+const playBtn = document.getElementById("play");
+
+/* ---------- START ---------- */
+function startApp(){
+  // Start the interactive flow without playing music
+  playBtn.classList.add("hidden");
+  render();
+}
+
+// remove curtain after animation so page is usable
+document.addEventListener('DOMContentLoaded', ()=>{
+  setTimeout(()=>{ const c = document.getElementById('curtain'); if(c) c.style.display = 'none'; }, 2600);
+});
+
+// Background music removed per request (Play Music button removed)
+
+/* ---------- RENDER ---------- */
+function render(){
+  const p = pairs[step];
+  choices.innerHTML = "";
+
+  // helper to slugify option text to image filename
+  function slugify(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
+
+  // create an option button that tries to show an image on small screens
+  function createOptionButton(opt, kind){
+    const b = document.createElement('button');
+    b.className = 'bopt bigtap';
+    b.dataset.correct = ( (kind==='if' && opt === p._correctIf) || (kind==='would' && opt === p._correctWould) ) ? '1' : '0';
+
+    // label fallback
+    const label = document.createElement('div'); label.textContent = opt; label.style.pointerEvents = 'none';
+
+    // try to load image only on narrow screens
+    const tryLoadImage = ()=>{
+      const imgEl = document.createElement('img'); imgEl.className='option-img'; imgEl.alt = opt;
+      const base = 'img/' + slugify(opt);
+      const exts = ['.png','.jpg','.jpeg','.webp','.svg'];
+      let idx = 0;
+      function attempt(){
+        if(idx>=exts.length){
+          // no image found, show label only
+          b.appendChild(label);
+          return;
+        }
+        imgEl.src = base + exts[idx++];
+        imgEl.onload = ()=>{ b.appendChild(imgEl); /* only image shown when present */ };
+        imgEl.onerror = attempt;
+      }
+      attempt();
+    };
+
+    if(window.matchMedia && window.matchMedia('(max-width:600px)').matches){
+      tryLoadImage();
+    }else{
+      // desktop: show label and provide image if present (non-blocking)
+      tryLoadImage();
+    }
+
+    // set click handler according to kind
+    if(kind === 'if') b.onclick = ()=>chooseIf(opt,b);
+    else b.onclick = ()=>chooseWould(opt,b);
+
+    return b;
+  }
+
+  if(phase === "if"){
+    line.innerHTML = "If you were <br><b>_____</b>";
+    p.ifOptions.forEach(opt=>{ choices.appendChild(createOptionButton(opt,'if')); });
+  }else{
+    line.innerHTML = `If you were <b>${p.if}</b>,<br>I would be <b>_____</b>`;
+    p.wouldOptions.forEach(opt=>{ choices.appendChild(createOptionButton(opt,'would')); });
+  }
+}
+
+/* ---------- IF STEP ---------- */
+function chooseIf(selected, btn){
+  const p = pairs[step];
+  // visual feedback
+  const correct = btn && btn.dataset && btn.dataset.correct === '1';
+  if(correct){
+    smallSparkAtButton(btn);
+    playTinyTone();
+    p.if = selected;
+    phase = "would";
+    setTimeout(render,600);
+  }else{
+    shakeButton(btn);
+    return; // don't advance until correct
+  }
+}
+
+/* ---------- WOULD STEP ---------- */
+function chooseWould(selected, btn){
+  const p = pairs[step];
+  const correct = btn && btn.dataset && btn.dataset.correct === '1';
+  if(correct){
+    smallSparkAtButton(btn); playTinyTone();
+    p.would = selected;
+    step++;
+    phase = "if";
+    if(step < pairs.length){
+      setTimeout(render,700);
+    }else{
+      setTimeout(showFinalPair,700);
+    }
+  }else{
+    shakeButton(btn);
+    return; // do not advance until correct
+  }
+}
+
+/* ---------- FINAL MELODY / KUROMI ---------- */
+function showFinalPair(){
+  line.innerHTML = "If you were my…";
+  // create buttons that try to use images from img/ (slugified)
+  choices.innerHTML = '';
+  const melodyBtn = (function(){ const b = createElementButtonForFinal('My Melody','melodyBtn', pickMelody); return b; })();
+  const kuromiBtn = (function(){ const b = createElementButtonForFinal('Kuromi','kuromiBtn', pickKuromi); return b; })();
+  const wrap = document.createElement('div'); wrap.id='finalChoices'; wrap.appendChild(melodyBtn); wrap.appendChild(kuromiBtn);
+  choices.appendChild(wrap);
+  const msg = document.createElement('div'); msg.id='revealMsg'; msg.style.cssText = 'font-size:13px;color:#666;margin-top:8px'; choices.appendChild(msg);
+
+  function createElementButtonForFinal(label,id,cb){
+    const b = document.createElement('button'); b.id = id; b.className = 'bopt bigtap'; b.onclick = cb;
+    const img = document.createElement('img'); img.className = 'option-img'; img.alt = label;
+    const base = 'img/' + label.toLowerCase().replace(/\s+/g,'-');
+    const exts = ['.png','.jpg','.jpeg','.webp','.svg'];
+    let i = 0;
+    function tryExt(){
+      if(i>=exts.length){
+        const lbl = document.createElement('div'); lbl.textContent = label; b.appendChild(lbl); return;
+      }
+      img.src = base + exts[i++];
+      img.onload = ()=>{ b.appendChild(img); };
+      img.onerror = tryExt;
+    }
+    tryExt();
+    return b;
+  }
+}
+
+function pickMelody(){
+  ensureAudio(); audioCtx.resume && audioCtx.resume();
+  // if the other was already picked, this completes the pair
+  if(kuromiPicked){
+    celebrate(); return;
+  }
+  melodyPicked = true;
+  const me = document.getElementById('melodyBtn');
+  if(me) me.style.display = 'none';
+  line.innerHTML = "If you were my <br><b>id be</b>";
+  const msg = document.getElementById('revealMsg'); if(msg) msg.textContent = 'Tap the remaining option to complete.';
+}
+function pickKuromi(){
+  ensureAudio(); audioCtx.resume && audioCtx.resume();
+  if(melodyPicked){
+    celebrate(); return;
+  }
+  kuromiPicked = true;
+  const me = document.getElementById('kuromiBtn');
+  if(me) me.style.display = 'none';
+  line.innerHTML = "If you were my <br><b>id be</b>";
+  const msg = document.getElementById('revealMsg'); if(msg) msg.textContent = 'Tap the remaining option to complete.';
+}
+
+
+/* ---------- CELEBRATION ---------- */
+function checkFinal(){
+  if(melodyPicked && kuromiPicked){
+    celebrate();
+  }
+}
+
+function celebrate(){
+  // insert final image (final.png) above the celebration text
+  const existingFinal = document.getElementById('finalImg');
+  if(!existingFinal){
+    const img = document.createElement('img');
+    img.id = 'finalImg';
+    img.src = 'img/final.png';
+    img.onerror = function(){ this.style.display = 'none'; };
+    img.style.width = '160px'; img.style.display='block'; img.style.margin='0 auto 10px'; img.style.borderRadius='12px';
+    const box = document.querySelector('.box'); if(box) box.insertBefore(img, line);
+  } else {
+    existingFinal.style.display = 'block';
+  }
+  line.innerHTML = "🎉 Happy Birthday <br><b>petiytom</b> 💗";
+  choices.innerHTML = "";
+  heartExplosion();
+  // enhanced fireworks + sound
+  launchBigFireworks();
+  playExplosionSound();
+  startConfettiBursts();
+}
+
+// start confetti bursts (uses canvas-confetti lib)
+function startConfettiBursts(){
+  // ensure confetti lib loaded
+  if(typeof confetti !== 'function'){
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js';
+    s.onload = ()=>startConfettiBursts();
+    document.head.appendChild(s);
+    return;
+  }
+
+  const duration = 15 * 1000,
+    animationEnd = Date.now() + duration,
+    defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 1000 };
+
+  function randomInRange(min, max) {
+    return Math.random() * (max - min) + min;
+  }
+
+  const interval = setInterval(function() {
+    const timeLeft = animationEnd - Date.now();
+
+    if (timeLeft <= 0) {
+      return clearInterval(interval);
+    }
+
+    const particleCount = 50 * (timeLeft / duration);
+
+    // since particles fall down, start a bit higher than random
+    confetti(
+      Object.assign({}, defaults, {
+        particleCount: Math.floor(particleCount),
+        origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 },
+      })
+    );
+    confetti(
+      Object.assign({}, defaults, {
+        particleCount: Math.floor(particleCount),
+        origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 },
+      })
+    );
+  }, 250);
+}
+
+/* ---------- HEART EFFECTS ---------- */
+function heartExplosion(){
+  for(let i=0;i<35;i++){
+    spawnHeart(true);
+  }
+}
+
+function spawnHeart(big=false){
+  const h=document.createElement("div");
+  h.className="heart";
+  h.textContent="💗";
+  h.style.left=Math.random()*100+"vw";
+  h.style.fontSize=(big?26:14)+Math.random()*20+"px";
+  h.style.animationDuration=(5+Math.random()*4)+"s";
+  document.body.appendChild(h);
+  setTimeout(()=>h.remove(),9000);
+}
+
+/* continuous hearts */
+setInterval(()=>spawnHeart(false),500);
+
+function shakeButton(btn){ if(!btn) return; btn.classList.add('shake'); setTimeout(()=>btn.classList.remove('shake'),420); }
+
+function smallSparkAtButton(btn){
+  if(!btn || !fx) return;
+  const r = btn.getBoundingClientRect();
+  explode(r.left + r.width/2, r.top + r.height/2, 20);
+}
+
+function smallSparkAtCenter(){ if(!fxCanvas) return; explode(fxCanvas.width/2, fxCanvas.height/2, 30); }
+
+function playTinyTone(){ if(!audioCtx) return; const now = audioCtx.currentTime; const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type='sine'; o.frequency.setValueAtTime(900 + Math.random()*400, now); g.gain.setValueAtTime(0.12, now); g.gain.exponentialRampToValueAtTime(0.001, now+0.18); o.connect(g); g.connect(audioCtx.destination); o.start(now); o.stop(now+0.18); }
+
+/* ---------- FIREWORKS + AUDIO ---------- */
+let audioCtx = null;
+function ensureAudio(){ if(!audioCtx){ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); } }
+
+function playExplosionSound(){
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  // noise burst for explosion
+  const bufferSize = audioCtx.sampleRate * 0.2;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for(let i=0;i<bufferSize;i++) data[i] = (Math.random()*2-1) * (1 - i/bufferSize);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(1, now);
+  gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+  const bp = audioCtx.createBiquadFilter();
+  bp.type = 'highpass'; bp.frequency.value = 800;
+  src.connect(bp);
+  bp.connect(gain);
+  gain.connect(audioCtx.destination);
+  src.start();
+  // a couple of quick bright sparks
+  for(let i=0;i<3;i++){
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(600 + Math.random()*800, now + i*0.02);
+    g.gain.setValueAtTime(0.15, now + i*0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.25 + i*0.02);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(now + i*0.02); o.stop(now + 0.3 + i*0.02);
+  }
+}
+
+const fxCanvas = document.getElementById('fx');
+const fx = fxCanvas.getContext && fxCanvas.getContext('2d');
+let particles = [];
+function resizeFx(){ if(!fxCanvas) return; fxCanvas.width = innerWidth; fxCanvas.height = innerHeight; }
+window.addEventListener('resize', resizeFx);
+resizeFx();
+
+function launchBigFireworks(){
+  for(let i=0;i<8;i++){
+    setTimeout(()=>{
+      const x = Math.random()*fxCanvas.width;
+      const y = Math.random()*fxCanvas.height*0.6 + 50;
+      explode(x,y);
+    }, i*180);
+  }
+  tickFx();
+}
+
+function explode(x,y){
+  const hue = Math.floor(Math.random()*360);
+  const count = 40 + Math.floor(Math.random()*40);
+  for(let i=0;i<count;i++){
+    const angle = Math.random()*Math.PI*2;
+    const speed = 1 + Math.random()*6;
+    particles.push({
+      x,y,
+      vx:Math.cos(angle)*speed,
+      vy:Math.sin(angle)*speed,
+      life:60 + Math.random()*40,
+      age:0,
+      color:`hsl(${hue + Math.random()*30},100%,60%)`
+    });
+  }
+}
+
+let fxRunning = false;
+function tickFx(){
+  if(!fx) return;
+  if(fxRunning) return; fxRunning = true;
+  (function loop(){
+    fx.clearRect(0,0,fxCanvas.width,fxCanvas.height);
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.vy += 0.06; // gravity
+      p.x += p.vx; p.y += p.vy; p.age++;
+      const t = p.age / p.life;
+      fx.globalCompositeOperation = 'lighter';
+      fx.fillStyle = p.color;
+      fx.beginPath();
+      fx.arc(p.x, p.y, Math.max(1, 3*(1-t)), 0, Math.PI*2);
+      fx.fill();
+      if(p.age > p.life) particles.splice(i,1);
+    }
+    if(particles.length>0) requestAnimationFrame(loop); else fxRunning=false;
+  })();
+}
+</script>
+
+</body>
+</html>
