@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>If You Were 💗</title>
+<title>If You Were Rana💗</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 /* ---------- GENERAL ---------- */
@@ -20,10 +20,11 @@ body{
 .box{
   background:#ffffffcc;
   backdrop-filter: blur(10px);
-  padding:32px;
+  padding:28px;
   border-radius:28px;
   box-shadow:0 25px 50px rgba(0,0,0,.15);
-  max-width:460px;
+  max-width:360px; /* keep room around frame for effects */
+  width: min(92vw, 360px);
   z-index:2;
 }
 h1{
@@ -45,18 +46,28 @@ button{
 
 /* close / transition effect when choosing correct answer */
 .close-effect{ transform:scale(.78); opacity:0; transition: transform .28s ease-in, opacity .28s ease-in; }
-.choice-fade{ transition: opacity .22s ease-in-out; }
+.choice-fade{ transition: opacity .28s ease-in-out; }
 
+/* image fade-in */
+.option-img{ opacity:0; transition: opacity .32s ease-in-out; }
+
+/* placeholder shimmer for images while loading */
+.img-placeholder{ width:100%; min-height:120px; max-height:220px; border-radius:12px; background:linear-gradient(90deg, rgba(243,230,237,0.35), rgba(247,217,232,0.35), rgba(243,230,237,0.35)); background-size:200% 100%; animation: shimmer 1.1s linear infinite; display:block; box-sizing:border-box; }
+.img-placeholder.no-img{ background:linear-gradient(180deg, rgba(238,238,238,0.35), rgba(230,230,230,0.35)); }
+@keyframes shimmer{ 0%{ background-position:200% 0 } 100%{ background-position:-200% 0 } }
+
+/* visually hidden (accessible label only) */
+.sr-only{ position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 /* option buttons layout: allow image + label and make mobile-friendly */
 .bopt{ display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; }
-.bopt .option-img{ width:72px; height:72px; object-fit:cover; border-radius:12px; display:block; }
+.bopt .option-img{ width:72px; height:72px; object-fit:contain; background:transparent; padding:6px; box-sizing:border-box; border-radius:12px; display:block; }
 @media (max-width:600px){
   .bopt{ padding:12px 16px; }
-  .bopt .option-img{ width:100%; height:auto; max-height:180px; }
+  .bopt .option-img{ width:100%; height:auto; max-height:180px; object-fit:contain; background:transparent; padding:6px; box-sizing:border-box; }
 }
 .options-stack{ display:flex; flex-direction:column; gap:12px; align-items:center; justify-content:center; }
 .bopt{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; width:100%; max-width:520px; padding:10px 14px; box-sizing:border-box; }
-.bopt .option-img{ width:100%; height:auto; object-fit:cover; border-radius:12px; display:block; }
+.bopt .option-img{ width:100%; height:auto; object-fit:contain; background:transparent; padding:6px; box-sizing:border-box; border-radius:12px; display:block; }
 @media (min-width:900px){
   .bopt{ max-width:520px; }
   .bopt .option-img{ max-height:220px; }
@@ -178,34 +189,33 @@ function render(){
     b.className = 'bopt bigtap';
     b.dataset.correct = ( (kind==='if' && opt === p._correctIf) || (kind==='would' && opt === p._correctWould) ) ? '1' : '0';
 
-    // label fallback
-    const label = document.createElement('div'); label.textContent = opt; label.style.pointerEvents = 'none';
+    // accessibility: keep text as aria-label but do not show it in the button
+    b.setAttribute('aria-label', opt);
 
-    // try to load image only on narrow screens
-    const tryLoadImage = ()=>{
-      const imgEl = document.createElement('img'); imgEl.className='option-img'; imgEl.alt = opt;
-      const base = 'img/' + slugify(opt);
-      const exts = ['.png','.jpg','.jpeg','.webp','.svg'];
-      let idx = 0;
-      function attempt(){
-        if(idx>=exts.length){
-          // no image found, show label only
-          b.appendChild(label);
-          return;
-        }
-        imgEl.src = base + exts[idx++];
-        imgEl.onload = ()=>{ b.appendChild(imgEl); /* only image shown when present */ };
-        imgEl.onerror = attempt;
+    // immediate shimmering placeholder prevents empty-looking buttons while images load
+    const placeholder = document.createElement('div');
+    placeholder.className = 'img-placeholder';
+    placeholder.style.pointerEvents = 'none';
+    b.appendChild(placeholder);
+
+    // create img element and try to load candidate files; on success swap in with fade
+    const imgEl = document.createElement('img'); imgEl.className='option-img'; imgEl.alt = opt; imgEl.style.opacity = '0';
+    const base = 'img/' + slugify(opt);
+    const exts = ['.png','.jpg','.jpeg','.webp','.svg'];
+    let idx = 0;
+    function attempt(){
+      if(idx>=exts.length){
+        // no image found: mark placeholder with neutral background (no text shown)
+        placeholder.classList.add('no-img');
+        return;
       }
-      attempt();
-    };
-
-    if(window.matchMedia && window.matchMedia('(max-width:600px)').matches){
-      tryLoadImage();
-    }else{
-      // desktop: show label and provide image if present (non-blocking)
-      tryLoadImage();
+      imgEl.src = base + exts[idx++];
+      imgEl.onload = ()=>{ b.insertBefore(imgEl, placeholder); imgEl.style.opacity = '1'; placeholder.style.opacity = '0'; setTimeout(()=>placeholder.remove(),360); };
+      imgEl.onerror = attempt;
     }
+    // always attempt loading so images appear as soon as possible
+    attempt();
+
 
     // set click handler according to kind
     if(kind === 'if') b.onclick = ()=>chooseIf(opt,b);
@@ -214,13 +224,31 @@ function render(){
     return b;
   }
 
+  // preload candidate images for current and next phase to improve load times
+  function preloadCandidates(arr){
+    const exts = ['.png','.jpg','.jpeg','.webp','.svg'];
+    arr.forEach(opt=>{
+      const base = 'img/' + slugify(opt);
+      exts.forEach(e=>{ const im = new Image(); im.src = base + e; });
+    });
+  }
+
   if(phase === "if"){
     line.innerHTML = "If you were <br><b>_____</b>";
+    // fade choices to mask loading
+    choices.classList.add('choice-fade'); choices.style.opacity = 0;
+    // preload both current and upcoming candidates for speed
+    preloadCandidates(p.ifOptions.concat(p.wouldOptions || []));
     p.ifOptions.forEach(opt=>{ choices.appendChild(createOptionButton(opt,'if')); });
   }else{
     line.innerHTML = `If you were <b>${p.if}</b>,<br>I would be <b>_____</b>`;
+    choices.classList.add('choice-fade'); choices.style.opacity = 0;
+    // preload upcoming and current choices
+    preloadCandidates(p.wouldOptions.concat(p.ifOptions || []));
     p.wouldOptions.forEach(opt=>{ choices.appendChild(createOptionButton(opt,'would')); });
   }
+  // fade in after a frame so images begin loading
+  requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ choices.style.opacity = 1; }); });
 }
 
 /* ---------- IF STEP ---------- */
@@ -277,19 +305,21 @@ function showFinalPair(){
 
   function createElementButtonForFinal(label,id,cb){
     const b = document.createElement('button'); b.id = id; b.className = 'bopt bigtap'; b.onclick = cb;
-    const img = document.createElement('img'); img.className = 'option-img'; img.alt = label;
-    const base = 'img/' + label.toLowerCase().replace(/\s+/g,'-');
-    const exts = ['.png','.jpg','.jpeg','.webp','.svg'];
-    let i = 0;
-    function tryExt(){
-      if(i>=exts.length){
-        const lbl = document.createElement('div'); lbl.textContent = label; b.appendChild(lbl); return;
+      // hide visible text — keep for accessibility only
+      b.setAttribute('aria-label', label);
+      const placeholder = document.createElement('div'); placeholder.className='img-placeholder'; placeholder.style.pointerEvents='none'; b.appendChild(placeholder);
+      const img = document.createElement('img'); img.className = 'option-img'; img.alt = label; img.style.opacity='0';
+      const base = 'img/' + label.toLowerCase().replace(/\s+/g,'-');
+      const exts = ['.png','.jpg','.jpeg','.webp','.svg'];
+      let i = 0;
+      function tryExt(){
+        if(i>=exts.length){ placeholder.classList.add('no-img'); return; }
+        img.src = base + exts[i++];
+        img.onload = ()=>{ b.appendChild(img); img.style.opacity='1'; placeholder.style.opacity='0'; setTimeout(()=>placeholder.remove(),360); };
+        img.onerror = tryExt;
       }
-      img.src = base + exts[i++];
-      img.onload = ()=>{ b.appendChild(img); };
-      img.onerror = tryExt;
-    }
-    tryExt();
+      // kick off immediate attempts
+      tryExt();
     return b;
   }
 }
@@ -339,7 +369,7 @@ function celebrate(){
   } else {
     existingFinal.style.display = 'block';
   }
-  line.innerHTML = "🎉 Happy Birthday <br><b>petiytom</b> 💗";
+  line.innerHTML = "🎉 Happy Birthday to my<br>forever <b>petiytom</b>💗";
   choices.innerHTML = "";
   heartExplosion();
   // enhanced fireworks + sound
@@ -393,14 +423,21 @@ function startConfettiBursts(){
 
 /* ---------- HEART EFFECTS ---------- */
 function heartExplosion(){
-  const emojis = ["💗","🌸","⭐","🌼"];
+  const emojis = ["💗","🌸","⭐","🌼","(❤️ ω ❤️)","🐰"];
   for(let i=0;i<35;i++){
     const e = emojis[i % emojis.length];
     spawnHeart(true, e);
   }
+  // then keep emitting smaller bursts periodically
+  window._heartBurstInterval = setInterval(()=>{
+    for(let i=0;i<12;i++){
+      const e = emojis[Math.floor(Math.random()*emojis.length)];
+      spawnHeart(true, e);
+    }
+  }, 700);
 }
 
-function spawnHeart(big=false, emoji='💗'){
+function spawnHeart(big=false, emoji='❤️',){
   const h=document.createElement("div");
   h.className="heart";
   h.textContent=emoji;
@@ -429,72 +466,6 @@ function playTinyTone(){ if(!audioCtx) return; const now = audioCtx.currentTime;
 /* ---------- FIREWORKS + AUDIO ---------- */
 let audioCtx = null;
 function ensureAudio(){ if(!audioCtx){ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); } }
-
-function playExplosionSound(){
-  if(!audioCtx) return;
-  const now = audioCtx.currentTime;
-  // noise burst for explosion
-  const bufferSize = audioCtx.sampleRate * 0.2;
-  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for(let i=0;i<bufferSize;i++) data[i] = (Math.random()*2-1) * (1 - i/bufferSize);
-  const src = audioCtx.createBufferSource();
-  src.buffer = buffer;
-  const gain = audioCtx.createGain();
-  gain.gain.setValueAtTime(1, now);
-  gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
-  const bp = audioCtx.createBiquadFilter();
-  bp.type = 'highpass'; bp.frequency.value = 800;
-  src.connect(bp);
-  bp.connect(gain);
-  gain.connect(audioCtx.destination);
-  src.start();
-  // a couple of quick bright sparks
-  for(let i=0;i<3;i++){
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = 'sawtooth';
-    o.frequency.setValueAtTime(600 + Math.random()*800, now + i*0.02);
-    g.gain.setValueAtTime(0.15, now + i*0.02);
-    g.gain.exponentialRampToValueAtTime(0.001, now + 0.25 + i*0.02);
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(now + i*0.02); o.stop(now + 0.3 + i*0.02);
-  }
-}
-
-// gentle "fairy dust" sound: soft bell/arpeggio + shimmering noise
-function playFairyDustSound(){
-  if(!audioCtx) return;
-  const now = audioCtx.currentTime;
-  const master = audioCtx.createGain(); master.gain.value = 0.18; master.connect(audioCtx.destination);
-
-  // soft arpeggiated bells (three staggered sine-ish tones)
-  const freqs = [660,880,1320];
-  freqs.forEach((f, i)=>{
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(f * (1 + (Math.random()-0.5)*0.01), now + i*0.06);
-    g.gain.setValueAtTime(0.0001, now + i*0.06);
-    g.gain.linearRampToValueAtTime(0.06, now + i*0.06 + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.9 + i*0.02);
-    o.connect(g); g.connect(master);
-    o.start(now + i*0.06); o.stop(now + 1.0 + i*0.02);
-  });
-
-  // shimmering high-frequency noise (short)
-  const bufferSize = audioCtx.sampleRate * 0.18;
-  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for(let i=0;i<bufferSize;i++){
-    data[i] = (Math.random()*2-1) * Math.pow(1 - i/bufferSize, 2);
-  }
-  const src = audioCtx.createBufferSource(); src.buffer = buffer;
-  const hp = audioCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value = 900;
-  const g2 = audioCtx.createGain(); g2.gain.setValueAtTime(0.25, now);
-  src.connect(hp); hp.connect(g2); g2.connect(master);
-  src.start(now);
-}
 
 const fxCanvas = document.getElementById('fx');
 const fx = fxCanvas.getContext && fxCanvas.getContext('2d');
