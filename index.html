@@ -386,15 +386,17 @@ function startConfettiBursts(){
 
 /* ---------- HEART EFFECTS ---------- */
 function heartExplosion(){
+  const emojis = ["💗","🌸","⭐","🌼"];
   for(let i=0;i<35;i++){
-    spawnHeart(true);
+    const e = emojis[i % emojis.length];
+    spawnHeart(true, e);
   }
 }
 
-function spawnHeart(big=false){
+function spawnHeart(big=false, emoji='💗'){
   const h=document.createElement("div");
   h.className="heart";
-  h.textContent="💗";
+  h.textContent=emoji;
   h.style.left=Math.random()*100+"vw";
   h.style.fontSize=(big?26:14)+Math.random()*20+"px";
   h.style.animationDuration=(5+Math.random()*4)+"s";
